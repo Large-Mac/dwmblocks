@@ -1,0 +1,57 @@
+#!/bin/sh
+os=$(uname)
+
+case "$os" in
+    Linux)
+        read -r _ u1 n1 s1 i1 _ < /proc/stat
+        sleep 0.2
+        read -r _ u2 n2 s2 i2 _ < /proc/stat
+        total=$(( (u2+n2+s2+i2) - (u1+n1+s1+i1) ))
+        idle=$(( i2 - i1 ))
+        cpu=$(( (total - idle) * 100 / total ))
+        ;;
+    FreeBSD)
+        t1=$(sysctl -n kern.cp_time)
+        sleep 0.2
+        t2=$(sysctl -n kern.cp_time)
+        cpu=$(printf '%s %s' "$t1" "$t2" | awk '{
+            tot=($6+$7+$8+$9+$10)-($1+$2+$3+$4+$5)
+            idle=$10-$5
+            printf "%.0f", (tot-idle)*100/tot
+        }')
+        ;;
+    OpenBSD)
+        cpu=$(vmstat 1 2 | awk 'END {printf "%.0f", 100-$16}')
+        ;;
+esac
+
+case "$os" in
+    Linux)
+        total_kb=$(awk '/^MemTotal/{print $2}' /proc/meminfo)
+        avail_kb=$(awk '/^MemAvailable/{print $2}' /proc/meminfo)
+        used=$(( (total_kb - avail_kb) / 1024 ))
+        total=$(( total_kb / 1024 ))
+        ;;
+    FreeBSD)
+        psize=$(sysctl -n hw.pagesize)
+        total=$(( $(sysctl -n hw.physmem) / 1024 / 1024 ))
+        free_pages=$(( $(sysctl -n vm.stats.vm.v_free_count) \
+                     + $(sysctl -n vm.stats.vm.v_inactive_count) ))
+        used=$(( total - free_pages * psize / 1024 / 1024 ))
+        ;;
+    OpenBSD)
+        psize=$(sysctl -n hw.pagesize)
+        total=$(( $(sysctl -n hw.physmem) / 1024 / 1024 ))
+        free_pages=$(sysctl -n vm.uvmexp.free)
+        used=$(( total - free_pages * psize / 1024 / 1024 ))
+        ;;
+esac
+
+ram=$(awk -v u="$used" -v t="$total" 'BEGIN {
+    if (t >= 1024)
+        printf "%.1fG/%.1fG", u/1024, t/1024
+    else
+        printf "%dM/%dM", u, t
+}')
+
+printf "CPU %d%%  RAM %s" "$cpu" "$ram"

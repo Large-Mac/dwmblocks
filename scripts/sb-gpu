@@ -1,0 +1,39 @@
+#!/bin/sh
+os=$(uname)
+
+if command -v nvidia-smi > /dev/null 2>&1; then
+    info=$(nvidia-smi \
+        --query-gpu=utilization.gpu,temperature.gpu \
+        --format=csv,noheader,nounits 2>/dev/null | head -1)
+    [ -z "$info" ] && exit
+    usage=$(printf '%s' "$info" | cut -d',' -f1 | tr -d ' ')
+    temp=$(printf '%s' "$info" | cut -d',' -f2 | tr -d ' ')
+    printf "GPU %d%%  %d°C" "$usage" "$temp"
+    exit
+fi
+
+case "$os" in
+    Linux)
+        busy=/sys/class/drm/card0/device/gpu_busy_percent
+        if [ -r "$busy" ]; then
+            usage=$(cat "$busy")
+            temp=$(cat /sys/class/drm/card0/device/hwmon/hwmon*/temp1_input \
+                2>/dev/null | head -1)
+            if [ -n "$temp" ]; then
+                printf "GPU %d%%  %d°C" "$usage" $(( temp / 1000 ))
+            else
+                printf "GPU %d%%" "$usage"
+            fi
+            exit
+        fi
+        freq=$(cat /sys/class/drm/card0/gt_cur_freq_mhz 2>/dev/null)
+        [ -n "$freq" ] && printf "GPU %dMHz" "$freq" && exit
+        ;;
+    FreeBSD)
+        freq=$(sysctl -n dev.drm.0.info.i915.cur_freq 2>/dev/null)
+        [ -n "$freq" ] && printf "GPU %dMHz" "$freq" && exit
+        ;;
+    OpenBSD)
+        exit
+        ;;
+esac

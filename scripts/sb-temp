@@ -1,0 +1,22 @@
+#!/bin/sh
+os=$(uname)
+
+case "$os" in
+    Linux)
+        temp=$(cat /sys/class/hwmon/hwmon*/temp1_input 2>/dev/null | head -1)
+        [ -z "$temp" ] && temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+        [ -z "$temp" ] && exit
+        printf "%d°C" $(( temp / 1000 ))
+        ;;
+    FreeBSD)
+        temp=$(sysctl -n dev.cpu.0.temperature 2>/dev/null)
+        [ -z "$temp" ] && exit
+        printf "%s°C" "${temp%C}"
+        ;;
+    OpenBSD)
+        temp=$(sysctl hw.sensors 2>/dev/null \
+            | awk -F'= ' '/cpu0.temp0/{gsub(/ degC.*/,"",$2); printf "%.0f",$2}')
+        [ -z "$temp" ] && exit
+        printf "%d°C" "$temp"
+        ;;
+esac
